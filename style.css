@@ -1,0 +1,66 @@
+/* Base Resets */
+.hidden-view { display: none !important; }
+::-webkit-scrollbar { width: 0px; background: transparent; }
+
+/* PC Desktop Navigation Active State */
+.nav-btn-desktop {
+    text-align: left;
+    padding: 14px 16px;
+    border-radius: 12px;
+    color: #6b7280;
+    font-weight: 700;
+    font-size: 0.95rem;
+    transition: all 0.2s ease;
+}
+.dark .nav-btn-desktop { color: #9ca3af; }
+.nav-btn-desktop.active {
+    background-color: #eff6ff;
+    color: #2563eb;
+}
+.dark .nav-btn-desktop.active {
+    background-color: rgba(37, 99, 235, 0.15);
+    color: #60a5fa;
+}
+
+/* Mobile Navigation Active State */
+.nav-btn-mobile.active { transform: translateY(-3px); }
+.nav-btn-mobile.active .nav-text { color: #2563eb; }
+.dark .nav-btn-mobile.active .nav-text { color: #60a5fa; }
+
+/* =========================================
+   GPU-ACCELERATED ACCORDION ANIMATION
+========================================= */
+/* The outer wrapper transitions grid templates */
+.accordion-wrapper {
+    display: grid;
+    grid-template-rows: 0fr;
+    transition: grid-template-rows 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    background-color: transparent;
+}
+
+/* When expanded, it snaps to 1fr (full height) */
+.accordion-wrapper.expanded {
+    grid-template-rows: 1fr;
+}
+
+/* The inner content hides overflow when grid is collapsed */
+.accordion-content {
+    overflow: hidden;
+}
+
+/* A slight fade in for the text */
+.accordion-inner {
+    opacity: 0;
+    transition: opacity 0.2s ease-in;
+    padding: 12px 16px;
+}
+.accordion-wrapper.expanded .accordion-inner {
+    opacity: 1;
+    transition-delay: 0.1s;
+}
+
+/* Print Overrides */
+@media print {
+    body, .dark { background: white !important; color: black !important; }
+    .accordion-wrapper { display: none !important; }
+}

@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en" class="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Mess Manager</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = { darkMode: 'class', theme: { extend: {} } }
+    </script>
+    <link rel="stylesheet" href="style.css">
+    <link rel="manifest" href="manifest.json">
+</head>
+<body class="bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 transition-colors duration-300 selection:bg-blue-200 antialiased overflow-hidden">
+
+    <div class="flex h-screen w-full">
+        <!-- DESKTOP SIDEBAR -->
+        <aside class="hidden md:flex flex-col w-64 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 z-20 shadow-sm transition-colors">
+            <div class="p-6">
+                <h1 class="text-2xl font-black text-blue-600 dark:text-blue-400 tracking-tight">Mess Manager</h1>
+            </div>
+            <nav class="flex-1 flex flex-col gap-2 px-4">
+                <button class="nav-btn-desktop active" data-target="view-attendance">📅 Daily Attendance</button>
+                <button class="nav-btn-desktop" data-target="view-summary">📊 Monthly Summary</button>
+                <button class="nav-btn-desktop" data-target="view-directory">👥 Member Directory</button>
+                <button class="nav-btn-desktop" data-target="view-settings">⚙️ Admin Tools</button>
+            </nav>
+        </aside>
+
+        <!-- MAIN CONTENT -->
+        <div class="flex-1 flex flex-col h-screen relative">
+            <header class="bg-white/80 dark:bg-gray-800/80 backdrop-blur-md border-b border-gray-200 dark:border-gray-700 px-4 md:px-8 py-3 flex justify-between items-center z-10 transition-colors print:hidden">
+                <div class="md:hidden">
+                    <h1 class="text-xl font-bold text-blue-600 dark:text-blue-400 tracking-tight">Mess Manager</h1>
+                </div>
+                <div class="hidden md:block font-semibold text-gray-500 dark:text-gray-400" id="header-view-title">Daily Attendance</div>
+                <button id="btn-theme-toggle" class="p-2 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-yellow-400 active:scale-90 transition-transform">
+                    <span id="theme-icon-dark" class="hidden">🌙</span>
+                    <span id="theme-icon-light">☀️</span>
+                </button>
+            </header>
+
+            <main id="app-content" class="flex-1 overflow-y-auto p-4 md:p-8 pb-24 md:pb-8 w-full max-w-4xl mx-auto">
+
+                <!-- VIEW 1: ATTENDANCE -->
+                <section id="view-attendance" class="view-section">
+                    <div class="flex items-center justify-between bg-white dark:bg-gray-800 p-3 sm:p-4 rounded-3xl shadow-sm border border-gray-100 dark:border-gray-700 mb-6 transition-colors print:hidden">
+                        <button id="btn-prev-day" class="h-14 w-14 sm:h-16 sm:w-16 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-200 rounded-2xl active:scale-90 transition-transform flex items-center justify-center text-2xl font-black">&lsaquo;</button>
+                        <div class="text-center flex-1 relative cursor-pointer group" onclick="document.getElementById('input-date').showPicker()">
+                            <div class="text-2xl sm:text-3xl font-black text-gray-800 dark:text-white leading-tight" id="display-date-main">Today</div>
+                            <div class="text-sm font-semibold text-gray-400" id="display-date-sub">Sept 1, 2026</div>
+                            <input type="date" id="input-date" class="absolute top-0 left-0 w-full h-full opacity-0 cursor-pointer">
+                        </div>
+                        <button id="btn-next-day" class="h-14 w-14 sm:h-16 sm:w-16 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-200 rounded-2xl active:scale-90 transition-transform flex items-center justify-center text-2xl font-black">&rsaquo;</button>
+                    </div>
+
+                    <div id="kitchen-dashboard" class="grid grid-cols-2 gap-4 mb-6 print:hidden">
+                        <div class="bg-white dark:bg-gray-800 p-4 rounded-3xl shadow-sm border border-gray-100 dark:border-gray-700 text-center transition-colors">
+                            <div class="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">☀️ Day</div>
+                            <div class="text-3xl font-black text-blue-600 dark:text-blue-400" id="dash-day-total">0</div>
+                            <div class="text-xs font-semibold text-gray-500 mt-1">Rice <span id="dash-day-rice" class="text-gray-800 dark:text-gray-200">0</span> &bull; No <span id="dash-day-norice" class="text-gray-800 dark:text-gray-200">0</span></div>
+                        </div>
+                        <div class="bg-white dark:bg-gray-800 p-4 rounded-3xl shadow-sm border border-gray-100 dark:border-gray-700 text-center transition-colors">
+                            <div class="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">🌙 Night</div>
+                            <div class="text-3xl font-black text-indigo-600 dark:text-indigo-400" id="dash-night-total">0</div>
+                            <div class="text-xs font-semibold text-gray-500 mt-1">Rice <span id="dash-night-rice" class="text-gray-800 dark:text-gray-200">0</span> &bull; No <span id="dash-night-norice" class="text-gray-800 dark:text-gray-200">0</span></div>
+                        </div>
+                    </div>
+                    <div id="attendance-list" class="space-y-4"></div>
+                </section>
+
+                <!-- VIEW 2: SUMMARY -->
+                <section id="view-summary" class="view-section hidden-view">
+                    <div class="flex space-x-3 mb-6 print:hidden">
+                        <input type="month" id="input-month" class="flex-1 bg-white dark:bg-gray-800 text-gray-900 dark:text-white font-bold border border-gray-200 dark:border-gray-700 rounded-2xl px-5 py-4 focus:outline-none focus:border-blue-500 transition-colors">
+                        <button id="btn-generate" class="bg-blue-600 text-white px-6 py-4 rounded-2xl font-bold active:scale-95 transition-transform shadow-md">Calculate</button>
+                    </div>
+                    <div class="bg-white dark:bg-gray-800 rounded-3xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden transition-colors">
+                        <div class="overflow-x-auto p-1">
+                            <table class="w-full text-left text-sm whitespace-nowrap">
+                                <thead class="text-gray-500 dark:text-gray-400 text-xs uppercase tracking-wider border-b border-gray-100 dark:border-gray-700">
+                                    <tr>
+                                        <th class="px-5 py-4 font-black">Name</th>
+                                        <th class="px-3 py-4 font-black text-center">Day</th>
+                                        <th class="px-3 py-4 font-black text-center">Night</th>
+                                        <th class="px-3 py-4 font-black text-center text-blue-600 dark:text-blue-400">Total</th>
+                                        <th class="px-3 py-4 font-black text-center text-gray-400">Rice</th>
+                                        <th class="px-3 py-4 font-black text-center text-gray-400">No-Rice</th>
+                                        <th class="px-3 py-4 print:hidden"></th>
+                                    </tr>
+                                </thead>
+                                <tbody id="summary-tbody" class="divide-y divide-gray-50 dark:divide-gray-700/50"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- VIEW 3: DIRECTORY -->
+                <section id="view-directory" class="view-section hidden-view print:hidden">
+                    <div class="bg-white dark:bg-gray-800 p-6 rounded-3xl shadow-sm border border-gray-100 dark:border-gray-700 mb-6 transition-colors">
+                        <h3 class="font-black text-gray-800 dark:text-white mb-4">Add Member</h3>
+                        <div class="space-y-4">
+                            <input type="text" id="add-name" placeholder="Full Name" class="w-full bg-gray-50 dark:bg-gray-900 border-none rounded-xl px-4 py-3 font-semibold dark:text-white focus:ring-2 focus:ring-blue-500 outline-none">
+                            <div class="flex space-x-4">
+                                <input type="text" id="add-room" placeholder="Room (Opt)" class="w-1/3 bg-gray-50 dark:bg-gray-900 border-none rounded-xl px-4 py-3 font-semibold dark:text-white focus:ring-2 focus:ring-blue-500 outline-none">
+                                <input type="tel" id="add-phone" placeholder="WhatsApp (10 digits)" class="w-2/3 bg-gray-50 dark:bg-gray-900 border-none rounded-xl px-4 py-3 font-semibold dark:text-white focus:ring-2 focus:ring-blue-500 outline-none">
+                            </div>
+                            <button id="btn-add-member" class="w-full bg-gray-900 dark:bg-blue-600 text-white font-bold py-4 rounded-xl active:scale-[0.98] transition-transform shadow-md">Save Profile</button>
+                        </div>
+                    </div>
+                    <div id="directory-list" class="space-y-3"></div>
+                </section>
+
+                <!-- VIEW 4: SETTINGS & TOOLS -->
+                <section id="view-settings" class="view-section hidden-view print:hidden">
+                    <div class="space-y-6">
+                        <!-- Export Reports -->
+                        <div class="bg-white dark:bg-gray-800 p-6 rounded-3xl shadow-sm border border-gray-100 dark:border-gray-700 transition-colors">
+                            <h3 class="font-black text-gray-800 dark:text-white mb-1">Monthly Reports</h3>
+                            <p class="text-sm text-gray-500 mb-4">Generate clean, professional matrices for printing or Excel.</p>
+                            <div class="flex flex-col sm:flex-row gap-3">
+                                <button id="btn-export-csv" class="flex-1 bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-400 py-4 rounded-2xl font-bold border border-green-200 dark:border-green-800 active:scale-[0.98] transition-transform">📥 Download Excel</button>
+                                <button id="btn-print" class="flex-1 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 py-4 rounded-2xl font-bold border border-blue-200 dark:border-blue-800 active:scale-[0.98] transition-transform">🖨️ Print to PDF</button>
+                            </div>
+                        </div>
+
+                        <!-- Admin Transfer -->
+                        <div class="bg-white dark:bg-gray-800 p-6 rounded-3xl shadow-sm border border-gray-100 dark:border-gray-700 transition-colors">
+                            <h3 class="font-black text-gray-800 dark:text-white mb-1">Admin Handover & Backup</h3>
+                            <p class="text-sm text-gray-500 mb-4">Export all app data to a single file to transfer to a new manager's device.</p>
+                            <button id="btn-backup-json" class="w-full bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 font-bold py-4 rounded-2xl mb-3 active:scale-[0.98] transition-transform">📤 Export Admin Data File</button>
+                            <div class="relative">
+                                <input type="file" id="file-restore" accept=".json" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer">
+                                <button class="w-full bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-400 font-bold py-4 rounded-2xl pointer-events-none transition-colors">📥 Import Admin Data File</button>
+                            </div>
+                        </div>
+
+                        <!-- Factory Reset -->
+                        <div class="bg-white dark:bg-gray-800 p-6 rounded-3xl shadow-sm border border-red-100 dark:border-red-900/50 transition-colors">
+                            <h3 class="font-black text-red-600 dark:text-red-400 mb-1">Danger Zone</h3>
+                            <p class="text-sm text-gray-500 mb-4">Permanently wipe all records, members, and data from this device.</p>
+                            <button id="btn-factory-reset" class="w-full bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 font-bold py-4 rounded-2xl border border-red-200 dark:border-red-800 active:scale-[0.98] transition-transform">⚠️ Factory Reset App</button>
+                        </div>
+                    </div>
+                </section>
+
+            </main>
+
+            <!-- MOBILE BOTTOM NAV -->
+            <nav class="md:hidden fixed bottom-0 w-full bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 flex justify-around pb-safe pt-2 z-50 transition-colors">
+                <button class="nav-btn-mobile active flex flex-col items-center w-1/4 py-2" data-target="view-attendance">
+                    <span class="text-xl mb-1">📅</span>
+                    <span class="text-[10px] font-bold text-gray-500 nav-text">Daily</span>
+                </button>
+                <button class="nav-btn-mobile flex flex-col items-center w-1/4 py-2" data-target="view-summary">
+                    <span class="text-xl mb-1">📊</span>
+                    <span class="text-[10px] font-bold text-gray-500 nav-text">Summary</span>
+                </button>
+                <button class="nav-btn-mobile flex flex-col items-center w-1/4 py-2" data-target="view-directory">
+                    <span class="text-xl mb-1">👥</span>
+                    <span class="text-[10px] font-bold text-gray-500 nav-text">Directory</span>
+                </button>
+                <button class="nav-btn-mobile flex flex-col items-center w-1/4 py-2" data-target="view-settings">
+                    <span class="text-xl mb-1">⚙️</span>
+                    <span class="text-[10px] font-bold text-gray-500 nav-text">Tools</span>
+                </button>
+            </nav>
+        </div>
+    </div>
+
+    <script type="module" src="js/app.js"></script>
+</body>
+</html>
