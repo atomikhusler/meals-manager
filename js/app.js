@@ -1,132 +1,174 @@
 // js/app.js
+import { validateLicense } from './auth.js';
 import { initDB } from './database.js';
-import { initDateControls, initDirectory, renderDirectoryList } from './ui.js';
+import { initTheme, initNavigation } from './ui-layout.js';
+import { initDateControls, renderDailyList } from './ui-daily.js';
+import { initDirectory, renderDirectoryList } from './ui-directory.js';
 import { initToolsAndSummary } from './export.js';
 
 // ==========================================
-// 1. THEME ENGINE (Dark/Light Mode)
+// ADMIN CONFIGURATION (Tweak these for your setup)
 // ==========================================
-function initTheme() {
-    const html = document.documentElement;
-    const btn = document.getElementById('btn-theme-toggle');
-    const iconDark = document.getElementById('theme-icon-dark');
-    const iconLight = document.getElementById('theme-icon-light');
+// 💡 HINT: Change this to a unique string. You will subscribe to this exact topic in your ntfy app.
+const ADMIN_NTFY_TOPIC = "meals_manager_skr_2026_927630"; 
 
-    // Check local storage or OS preference
-    let isDark = localStorage.getItem('theme') === 'dark';
-    if (!localStorage.getItem('theme') && window.matchMedia('(prefers-color-scheme: dark)').matches) {
-        isDark = true;
-    }
+// 💡 HINT: Your Telegram support group deep link domain (without @)
+const TELEGRAM_SUPPORT_GROUP = "https://t.me/+aK5HSD9lKJhkYTI1"; 
 
-    function applyTheme() {
-        if (isDark) {
-            html.classList.add('dark');
-            iconDark.classList.add('hidden');
-            iconLight.classList.remove('hidden');
-        } else {
-            html.classList.remove('dark');
-            iconDark.classList.remove('hidden');
-            iconLight.classList.add('hidden');
-        }
-    }
-
-    // Toggle on click
-    btn.addEventListener('click', () => {
-        isDark = !isDark;
-        localStorage.setItem('theme', isDark ? 'dark' : 'light');
-        applyTheme();
-    });
-
-    applyTheme();
-}
-
-// ==========================================
-// 2. CROSS-DEVICE NAVIGATION ENGINE
-// ==========================================
-function initNavigation() {
-    const mobileBtns = document.querySelectorAll('.nav-btn-mobile');
-    const desktopBtns = document.querySelectorAll('.nav-btn-desktop');
-    const views = document.querySelectorAll('.view-section');
-    const headerTitle = document.getElementById('header-view-title');
-
-    function switchTab(targetId, title) {
-        // Hide all views
-        views.forEach(v => v.classList.add('hidden-view'));
-        
-        // Remove active states
-        mobileBtns.forEach(b => b.classList.remove('active'));
-        desktopBtns.forEach(b => b.classList.remove('active'));
-
-        // Show target
-        document.getElementById(targetId).classList.remove('hidden-view');
-        
-        // Sync active states on both desktop and mobile buttons
-        const targetMobile = document.querySelector(`.nav-btn-mobile[data-target="${targetId}"]`);
-        const targetDesktop = document.querySelector(`.nav-btn-desktop[data-target="${targetId}"]`);
-        
-        if (targetMobile) targetMobile.classList.add('active');
-        if (targetDesktop) targetDesktop.classList.add('active');
-
-        // Update PC header title
-        if(headerTitle) headerTitle.innerText = title;
-
-        // Auto-trigger data refreshes based on the tab selected
-        if (targetId === 'view-summary') {
-            document.getElementById('btn-generate').click();
-        }
-        if (targetId === 'view-directory') {
-            renderDirectoryList();
-        }
-    }
-
-    // Attach to mobile buttons
-    mobileBtns.forEach(btn => {
-        btn.addEventListener('click', () => {
-            const title = btn.innerText.replace(/[^a-zA-Z\s]/g, '').trim();
-            switchTab(btn.getAttribute('data-target'), title);
-        });
-    });
-
-    // Attach to desktop buttons
-    desktopBtns.forEach(btn => {
-        btn.addEventListener('click', () => {
-            const title = btn.innerText.replace(/[^a-zA-Z\s]/g, '').trim();
-            switchTab(btn.getAttribute('data-target'), title);
-        });
-    });
-}
-
-// ==========================================
-// 3. APP BOOTSTRAP (The Master Startup)
-// ==========================================
 async function bootApp() {
-    // 1. Initialize Theme immediately to prevent white flashes
     initTheme();
     
-    try {
-        // 2. Boot the Local Database
-        await initDB();
-        
-        // 3. Initialize all modular engines
-        initNavigation();         // Hooks up Tab switching
-        initDateControls();       // Hooks up Daily view and renders today's list
-        initDirectory();          // Hooks up "Add Member" form & validation
-        initToolsAndSummary();    // Hooks up PDF/Excel Export & Summary logic
-        
-        // 4. Pre-render the directory in the background
-        renderDirectoryList();
-        
-        // Default the month picker to the current month
-        const today = new Date();
-        const offset = today.getTimezoneOffset() * 60000;
-        const currentMonth = (new Date(today - offset)).toISOString().substring(0, 7);
-        document.getElementById('input-month').value = currentMonth;
+    const splash = document.getElementById('splash-screen');
+    const gate = document.getElementById('activation-gate');
+    
+    // Check for existing valid license
+    const savedName = localStorage.getItem('mm_admin_name');
+    const savedPhone = localStorage.getItem('mm_admin_phone');
+    const savedKey = localStorage.getItem('mm_license_key');
+    
+    const isLicensed = savedName && savedPhone && savedKey && validateLicense(savedName, savedPhone, savedKey);
 
+    // Premium 1.5s delay
+    setTimeout(() => {
+        if (isLicensed) {
+            splash.style.opacity = '0';
+            setTimeout(() => {
+                splash.style.display = 'none';
+                loadMainApp();
+            }, 500);
+        } else {
+            gate.style.display = 'flex';
+            splash.style.opacity = '0';
+            setTimeout(() => {
+                splash.style.display = 'none';
+                initActivationGate();
+            }, 500);
+        }
+    }, 1500);
+}
+
+function initActivationGate() {
+    const nameInput = document.getElementById('auth-name');
+    const phoneInput = document.getElementById('auth-phone');
+    const btnRequest = document.getElementById('btn-request-key');
+    const statusText = document.getElementById('auth-status-text');
+    
+    let eventSource = null;
+
+    // 1. The Serverless Auto-Read Request
+    btnRequest.addEventListener('click', async () => {
+        const name = nameInput.value.trim();
+        const phone = phoneInput.value.trim();
+        
+        if (!name || !phone) return alert("Please enter your Name and Mobile Number first.");
+        
+        // Generate a unique temporary listening channel for this device
+        const deviceId = `device_${Math.random().toString(36).substring(2, 8)}`;
+        
+        // Update UI
+        btnRequest.innerHTML = `<svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white dark:text-black inline-block" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Sending Request...`;
+        btnRequest.disabled = true;
+
+        // Send silent HTTP POST to Admin's ntfy topic
+        try {
+            await fetch(`https://ntfy.sh/${ADMIN_NTFY_TOPIC}`, {
+                method: 'POST',
+                headers: { 'Title': 'New Activation Request' },
+                body: `Name: ${name}\nMobile: ${phone}\nReply Topic: ${deviceId}`
+            });
+            
+            btnRequest.innerHTML = `<svg class="animate-pulse -ml-1 mr-2 h-4 w-4 text-blue-500 inline-block" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg> Awaiting Code...`;
+            statusText.classList.remove('hidden');
+
+        } catch (error) {
+            alert("Network error. Could not send request. Check your internet connection.");
+            btnRequest.innerHTML = "Request Activation Key";
+            btnRequest.disabled = false;
+            return;
+        }
+
+        // Open Server-Sent Events (SSE) Listener on the temporary topic
+        if (eventSource) eventSource.close();
+        eventSource = new EventSource(`https://ntfy.sh/${deviceId}/sse`);
+        
+        eventSource.onmessage = (e) => {
+            const data = JSON.parse(e.data);
+            if (data.event === 'message') {
+                const receivedCode = data.message.trim();
+                
+                // Validate incoming message immediately
+                if (validateLicense(name, phone, receivedCode)) {
+                    eventSource.close(); 
+                    localStorage.setItem('mm_admin_name', name);
+                    localStorage.setItem('mm_admin_phone', phone);
+                    localStorage.setItem('mm_license_key', receivedCode);
+                    
+                    // Visual confirmation
+                    btnRequest.innerHTML = "Activation Successful!";
+                    btnRequest.classList.replace('bg-gray-900', 'bg-green-500');
+                    btnRequest.classList.replace('dark:bg-white', 'bg-green-500');
+                    btnRequest.classList.remove('dark:text-black');
+                    btnRequest.classList.add('text-white');
+                    statusText.classList.add('hidden');
+                    
+                    setTimeout(() => window.location.reload(), 1500);
+                }
+            }
+        };
+    });
+
+    // 2. Manual Verify Fallback (If they close the app while waiting)
+    document.getElementById('btn-verify-key').addEventListener('click', () => {
+        const name = nameInput.value.trim();
+        const phone = phoneInput.value.trim();
+        const key = document.getElementById('auth-key').value.trim();
+        
+        if (!name || !phone || !key) return alert("Fill all fields.");
+        
+        if (validateLicense(name, phone, key)) {
+            if (eventSource) eventSource.close();
+            localStorage.setItem('mm_admin_name', name);
+            localStorage.setItem('mm_admin_phone', phone);
+            localStorage.setItem('mm_license_key', key);
+            window.location.reload(); 
+        } else {
+            alert("Invalid Key. Check your details and try again.");
+        }
+    });
+
+    // 3. Telegram Support Deep Link
+    document.getElementById('btn-tg-support').addEventListener('click', () => {
+        window.open(TELEGRAM_SUPPORT_GROUP, '_blank');
+    });
+}
+
+// Normal Boot Sequence
+async function loadMainApp() {
+    try {
+        await initDB();
+        initDateControls();       
+        initDirectory();          
+        initToolsAndSummary();    
+        
+        renderDirectoryList(); 
+        
+        initNavigation((targetTabId) => {
+            if (targetTabId === 'view-summary') {
+                const monthInput = document.getElementById('input-summary-month');
+                if (monthInput) monthInput.dispatchEvent(new Event('change'));
+            }
+            if (targetTabId === 'view-directory') {
+                renderDirectoryList();
+            }
+            if (targetTabId === 'view-attendance') {
+                const dateInput = document.getElementById('input-date');
+                if (dateInput) renderDailyList(dateInput.value);
+            }
+        });
     } catch (error) {
         console.error("Boot Failed:", error);
-        alert("Failed to access local database. Ensure you aren't in private browsing mode or out of storage.");
+        alert("System boot failed. Check console.");
     }
 }
 
-// Fire the sequence when the HTML is fully loaded
 window.addEventListener('DOMContentLoaded', bootApp);

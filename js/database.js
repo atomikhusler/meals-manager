@@ -91,10 +91,27 @@ export function updateMemberStatus(memberId, newStatus) {
     });
 }
 
+// 🚀 CASCADING HARD DELETE FIX
 export function deleteMember(memberId) {
     return new Promise((resolve, reject) => {
-        const tx = db.transaction(['Directory'], 'readwrite');
-        tx.objectStore('Directory').delete(memberId);
+        // Open transaction on BOTH tables to keep data perfectly synced
+        const tx = db.transaction(['Directory', 'Meals'], 'readwrite');
+        
+        // 1. Delete the member from the directory
+        tx.objectStore('Directory').delete(Number(memberId));
+        
+        // 2. Sweep the Meals table and permanently scrub their history
+        const mealsStore = tx.objectStore('Meals');
+        const index = mealsStore.index('memberId');
+        const req = index.openCursor(IDBKeyRange.only(Number(memberId)));
+        
+        req.onsuccess = (event) => {
+            const cursor = event.target.result;
+            if (cursor) {
+                cursor.delete(); // Hard delete the orphaned meal record
+                cursor.continue(); // Move to the next record
+            }
+        };
         
         tx.oncomplete = () => resolve();
         tx.onerror = (e) => reject(e.target.error);
@@ -140,15 +157,55 @@ export function saveMealRecord(date, memberId, timeOfDay, mealValue) {
 }
 
 // ==========================================
-// 4. ADMIN SYSTEM CONTROLS
+// 4. ADMIN TOOLS & EXPORT/RESTORE LOGIC
 // ==========================================
 export function factoryResetDB() {
+    return clearDatabase(); // Routes to the unified clear function
+}
+
+export async function getMonthRecords(monthPrefix) {
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction(['Meals'], 'readonly');
+        const req = tx.objectStore('Meals').getAll();
+        req.onsuccess = () => {
+            const all = req.result || [];
+            resolve(all.filter(r => r.date.startsWith(monthPrefix)));
+        };
+        req.onerror = () => reject(req.error);
+    });
+}
+
+export async function getExportData() {
+    const members = await getAllMembers();
+    const records = await new Promise((resolve) => {
+        const tx = db.transaction(['Meals'], 'readonly');
+        const req = tx.objectStore('Meals').getAll();
+        req.onsuccess = () => resolve(req.result || []);
+    });
+    return { members, records };
+}
+
+export async function restoreExportData(data) {
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction(['Directory', 'Meals'], 'readwrite');
+        tx.objectStore('Directory').clear();
+        tx.objectStore('Meals').clear();
+        
+        if (data.members) data.members.forEach(m => tx.objectStore('Directory').put(m));
+        if (data.records) data.records.forEach(r => tx.objectStore('Meals').put(r));
+        
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+    });
+}
+
+export async function clearDatabase() {
     return new Promise((resolve, reject) => {
         const tx = db.transaction(['Directory', 'Meals'], 'readwrite');
         tx.objectStore('Directory').clear();
         tx.objectStore('Meals').clear();
         
         tx.oncomplete = () => resolve();
-        tx.onerror = (e) => reject(e.target.error);
+        tx.onerror = () => reject(tx.error);
     });
 }
