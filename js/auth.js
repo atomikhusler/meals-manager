@@ -1,6 +1,6 @@
 // js/auth.js
 
-const SECRET_SALT = "MealsManager2026_SKR"; 
+const SECRET_SALT = "meals_manager_skr_2026_927630"; 
 
 export function generateKey(name, phone) {
     // 1. Normalize the inputs to prevent typos from breaking the hash
