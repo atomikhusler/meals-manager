@@ -1,6 +1,17 @@
 <!DOCTYPE html>
 <html lang="en" class="light">
 <head>
+  <script>
+    // The Bug Hunter
+    window.onerror = function(msg, url, line) {
+        alert("CRASH LOG: " + msg + "\nLine: " + line);
+        return false;
+    };
+    window.addEventListener('unhandledrejection', function(event) {
+        alert("PROMISE CRASH: " + (event.reason ? event.reason.message || event.reason : "Unknown Error"));
+    });
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Mess Manager</title>
