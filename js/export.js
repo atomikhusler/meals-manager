@@ -1,5 +1,6 @@
 // js/export.js
 import { getAllMembers, getMonthRecords, getExportData, restoreExportData, clearDatabase } from './database.js';
+import { downloadExcel, printPDF } from './file-export.js';
 
 // ==========================================
 // 1. HELPER FUNCTIONS
@@ -29,8 +30,9 @@ export function initToolsAndSummary() {
     const currentMonth = new Date().toISOString().substring(0, 7);
     renderSummaryHeader(currentMonth);
     
-    document.getElementById('btn-export-csv').addEventListener('click', downloadCSV);
-    document.getElementById('btn-print').addEventListener('click', printPDF);
+    // Connects perfectly to your new file-export.js
+    document.getElementById('btn-export-csv').addEventListener('click', async () => await downloadExcel());
+    document.getElementById('btn-print').addEventListener('click', () => printPDF());
     document.getElementById('btn-backup-json').addEventListener('click', backupData);
     document.getElementById('file-restore').addEventListener('change', restoreData);
     
@@ -130,7 +132,6 @@ async function generateSummary(monthPrefix) {
                 if (r.night === 'RICE') { s.rice++; globalRice++; }
                 if (r.night === 'NORICE') s.noRice++;
 
-                // Logic Upgrade: Render 'OFF' as skipped '--' for perfect billing clarity
                 s.logs.push({
                     date: r.date,
                     dayStr: r.day === 'NORICE' ? 'No-Rice' : (r.day === 'OFF' ? '--' : 'Rice'),
@@ -264,7 +265,6 @@ function attachDrawerListeners(container, monthPrefix) {
                 receiptText += `No meals logged.\n`;
             }
 
-            // Trigger OS Native Share Sheet
             if (navigator.share) {
                 try {
                     await navigator.share({
@@ -275,7 +275,6 @@ function attachDrawerListeners(container, monthPrefix) {
                     console.log("Share action cancelled by user.");
                 }
             } else {
-                // Fallback for browsers that don't support Web Share API
                 navigator.clipboard.writeText(receiptText);
                 alert("Receipt copied to clipboard.");
             }
@@ -284,44 +283,8 @@ function attachDrawerListeners(container, monthPrefix) {
 }
 
 // ==========================================
-// 5. EXPORT UTILITIES (CSV / PDF / JSON)
+// 5. EXPORT UTILITIES (JSON BACKUP)
 // ==========================================
-async function downloadCSV() {
-    const month = document.getElementById('input-summary-month').value;
-    const members = await getAllMembers();
-    const records = await getMonthRecords(month);
-
-    let csvContent = "data:text/csv;charset=utf-8,";
-    csvContent += "Name,Room,Phone,Day Meals,Night Meals,Total Meals,Rice Meals,No-Rice Meals\n";
-
-    members.forEach(m => {
-        let d = 0, n = 0, r = 0, nr = 0;
-        records.filter(rec => rec.memberId === m.id).forEach(rec => {
-            if (rec.day !== 'OFF') d++;
-            if (rec.night !== 'OFF') n++;
-            if (rec.day === 'RICE') r++;
-            if (rec.night === 'RICE') r++;
-            if (rec.day === 'NORICE') nr++;
-            if (rec.night === 'NORICE') nr++;
-        });
-        if (m.status === 'ACTIVE' || (d+n) > 0) {
-            csvContent += `"${m.name}","${m.room}","${m.phone}",${d},${n},${d + n},${r},${nr}\n`;
-        }
-    });
-
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `Mess_Manager_${month}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-}
-
-function printPDF() {
-    window.print();
-}
-
 async function backupData() {
     try {
         const data = await getExportData();

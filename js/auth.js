@@ -1,35 +1,90 @@
 // js/auth.js
 
-const SECRET_SALT = "meals_manager_skr_2026_927630"; 
+// 💡 Paste your Supabase Project URL and Public Anon Key here
+const SUPABASE_URL = "https://usazhtrcafnsylffrhhv.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVzYXpodHJjYWZuc3lsZmZyaGh2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgzNzUyMTYsImV4cCI6MjEwMzk1MTIxNn0.KPAfz21-QfmaK5VOSqVXpkUBT7LujNQjsW85HTsqRhI";
+        
+export const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-export function generateKey(name, phone) {
-    // 1. Normalize the inputs to prevent typos from breaking the hash
-    const cleanName = name.trim().toLowerCase().replace(/\s+/g, '');
-    const cleanPhone = phone.trim();
-    const rawData = cleanName + cleanPhone + SECRET_SALT;
-    
-    // 2. Bitwise Hashing Algorithm (Standard lightweight string to 32-bit integer)
-    let hash = 0;
-    for (let i = 0; i < rawData.length; i++) {
-        const char = rawData.charCodeAt(i);
-        hash = ((hash << 5) - hash) + char;
-        hash = hash & hash; 
+// Permanent, cryptographically secure Device Identifier
+export function getOrCreateDeviceId() {
+    let did = localStorage.getItem('mm_device_id');
+    if (!did) {
+        did = crypto.randomUUID();
+        localStorage.setItem('mm_device_id', did);
     }
-    
-    // 3. Convert to Alphanumeric Base-36 and format nicely
-    let base36 = Math.abs(hash).toString(36).toUpperCase();
-    
-    // Ensure it's exactly 6 characters by padding if too short
-    while (base36.length < 6) {
-        base36 += "X";
-    }
-    
-    // Format as XXX-XXX
-    const finalKey = base36.substring(0, 3) + "-" + base36.substring(3, 6);
-    return finalKey;
+    return did;
 }
 
-export function validateLicense(name, phone, inputKey) {
-    const expectedKey = generateKey(name, phone);
-    return inputKey.trim().toUpperCase() === expectedKey;
+// Submit activation request to Supabase
+export async function requestActivation(name, phone) {
+    const deviceId = getOrCreateDeviceId();
+
+    // Check if device already registered
+    const { data: existing, error: fetchErr } = await supabase
+        .from('activations')
+        .select('status')
+        .eq('device_id', deviceId)
+        .maybeSingle();
+
+    if (fetchErr) throw new Error(fetchErr.message);
+
+    if (existing) {
+        return { success: true, status: existing.status, deviceId };
+    }
+
+    // Insert new request (RLS ensures status can only be 'PENDING')
+    const { error: insertErr } = await supabase
+        .from('activations')
+        .insert([{
+            device_id: deviceId,
+            name: name.trim(),
+            phone: phone.trim(),
+            status: 'PENDING'
+        }]);
+
+    if (insertErr) throw new Error(insertErr.message);
+    return { success: true, status: 'PENDING', deviceId };
+}
+
+// Background status check for boot validation and kill-switch
+export async function verifyLicenseStatus() {
+    const deviceId = getOrCreateDeviceId();
+    try {
+        const { data, error } = await supabase
+            .from('activations')
+            .select('status')
+            .eq('device_id', deviceId)
+            .maybeSingle();
+
+        if (error || !data) return 'UNREGISTERED';
+        return data.status; // 'PENDING' | 'APPROVED' | 'REVOKED'
+    } catch {
+        // Network unavailable: fall back to cached local state if available
+        return localStorage.getItem('mm_license_valid') === 'true' ? 'OFFLINE_APPROVED' : 'OFFLINE_BLOCKED';
+    }
+}
+
+// Realtime WebSocket channel listening for approval
+export function listenForActivationApproval(onApproved) {
+    const deviceId = getOrCreateDeviceId();
+
+    return supabase
+        .channel(`device-sync-${deviceId}`)
+        .on(
+            'postgres_changes',
+            {
+                event: 'UPDATE',
+                schema: 'public',
+                table: 'activations',
+                filter: `device_id=eq.${deviceId}`
+            },
+            (payload) => {
+                if (payload.new && payload.new.status === 'APPROVED') {
+                    localStorage.setItem('mm_license_valid', 'true');
+                    onApproved();
+                }
+            }
+        )
+        .subscribe();
 }
