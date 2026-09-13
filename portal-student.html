@@ -125,29 +125,26 @@
         <div id="toast-container" class="absolute bottom-5 left-5 right-5 z-50 flex flex-col gap-2 pointer-events-none"></div>
     </div>
 
-    <script>
+        <script>
         // ==========================================
         const SUPABASE_URL = "https://usazhtrcafnsylffrhhv.supabase.co";
         const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVzYXpodHJjYWZuc3lsZmZyaGh2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgzNzUyMTYsImV4cCI6MjEwMzk1MTIxNn0.KPAfz21-QfmaK5VOSqVXpkUBT7LujNQjsW85HTsqRhI";
         // ==========================================
-        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
         // Security Guard
         async function authenticateStudent() {
             try {
-                const { data, error } = await supabase.auth.getSession();
+                const { data, error } = await supabaseClient.auth.getSession();
                 if (!data?.session) throw new Error("No session");
 
-                const { data: profile } = await supabase.from('profiles').select('role, name').eq('user_id', data.session.user.id).single();
+                const { data: profile } = await supabaseClient.from('profiles').select('role, name').eq('user_id', data.session.user.id).single();
                 
                 if (profile?.role !== 'STUDENT') {
                     window.location.replace('index.html');
                 } else {
                     document.getElementById('student-greeting').innerText = `Hi, ${profile.name.split(' ')[0]}`;
                     document.getElementById('app-body').style.opacity = '1';
-                    
-                    // Call data loaders here in the future
-                    // loadStudentData(); 
                 }
             } catch (err) {
                 window.location.replace('index.html');
@@ -172,41 +169,30 @@
             }, 2500);
         }
 
-        // Segmented Control Logic (UI visual updates)
+        // Segmented Control Logic
         document.querySelectorAll('.toggle-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 const target = e.currentTarget;
-                const mealType = target.getAttribute('data-meal');
                 const value = target.getAttribute('data-val');
 
-                // 1. Check if deadline has passed (Mocking check for now)
-                const isLocked = false; 
-                if (isLocked) {
-                    return showToast("Deadline passed. Cannot update meal.", "error");
-                }
-
-                // 2. Reset sibling styles
                 const siblings = target.parentElement.querySelectorAll('.toggle-btn');
                 siblings.forEach(sib => {
                     sib.classList.remove('bg-white', 'dark:bg-[#1a1a1c]', 'text-gray-900', 'dark:text-white', 'shadow-sm', 'border', 'border-gray-100', 'dark:border-gray-800');
                     sib.classList.add('text-gray-500');
                 });
 
-                // 3. Apply active styles to clicked button
                 target.classList.remove('text-gray-500');
                 target.classList.add('bg-white', 'dark:bg-[#1a1a1c]', 'text-gray-900', 'dark:text-white', 'shadow-sm', 'border', 'border-gray-100', 'dark:border-gray-800');
 
-                // 4. Update Database (Future implementation)
                 showToast(`Updated to ${value.replace('_', ' ')}`);
             });
         });
 
         // Logout
         document.getElementById('btn-logout').addEventListener('click', async () => {
-            await supabase.auth.signOut();
+            await supabaseClient.auth.signOut();
             window.location.replace('index.html');
         });
-
     </script>
 </body>
 </html>

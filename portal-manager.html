@@ -179,27 +179,25 @@
         </div>
     </div>
 
-    <script>
+        <script>
         // ==========================================
         const SUPABASE_URL = "https://usazhtrcafnsylffrhhv.supabase.co";
         const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVzYXpodHJjYWZuc3lsZmZyaGh2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgzNzUyMTYsImV4cCI6MjEwMzk1MTIxNn0.KPAfz21-QfmaK5VOSqVXpkUBT7LujNQjsW85HTsqRhI";
         // ==========================================
-        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
         // Security Guard: Verify Session and Role before showing UI
         async function authenticateManager() {
             try {
-                const { data, error } = await supabase.auth.getSession();
+                const { data, error } = await supabaseClient.auth.getSession();
                 if (!data?.session) throw new Error("No session");
 
                 // Check Role
-                const { data: profile } = await supabase.from('profiles').select('role').eq('user_id', data.session.user.id).single();
+                const { data: profile } = await supabaseClient.from('profiles').select('role').eq('user_id', data.session.user.id).single();
                 
                 if (profile?.role !== 'MANAGER') {
-                    // Kick unauthorized users (e.g., Students trying to view God Mode)
                     window.location.replace('index.html');
                 } else {
-                    // Reveal UI
                     document.getElementById('app-body').style.opacity = '1';
                 }
             } catch (err) {
@@ -207,7 +205,6 @@
             }
         }
 
-        // Run Security Guard immediately
         authenticateManager();
 
         // --- UI ROUTING LOGIC ---
@@ -225,17 +222,10 @@
         navBtns.forEach(btn => {
             btn.addEventListener('click', () => {
                 const targetId = btn.getAttribute('data-target');
-                
-                // Update header
                 headerTitle.innerText = titleMap[targetId];
-
-                // Hide all views
                 views.forEach(v => v.classList.add('hidden-view'));
-                
-                // Show target view
                 document.getElementById(targetId).classList.remove('hidden-view');
 
-                // Update active states (Mobile)
                 document.querySelectorAll('nav.md\\:hidden .nav-btn').forEach(b => {
                     b.classList.remove('active', 'text-blue-600', 'dark:text-blue-500');
                     b.classList.add('text-gray-400', 'dark:text-gray-500');
@@ -243,13 +233,11 @@
                     b.querySelector('svg').classList.add('stroke-2');
                 });
 
-                // Update active states (Desktop)
                 document.querySelectorAll('#desktop-nav .nav-btn').forEach(b => {
                     b.classList.remove('active', 'bg-white', 'dark:bg-[#111]', 'shadow-sm', 'text-blue-600', 'dark:text-blue-500');
                     b.classList.add('text-gray-500', 'dark:text-gray-400');
                 });
 
-                // Highlight clicked button
                 if (btn.closest('nav.md\\:hidden')) {
                     btn.classList.remove('text-gray-400', 'dark:text-gray-500');
                     btn.classList.add('active', 'text-blue-600', 'dark:text-blue-500');
@@ -264,7 +252,7 @@
 
         // Logout Logic
         const handleLogout = async () => {
-            await supabase.auth.signOut();
+            await supabaseClient.auth.signOut();
             window.location.replace('index.html');
         };
         document.getElementById('btn-logout-desktop').addEventListener('click', handleLogout);
@@ -276,10 +264,11 @@
             window.open(`https://wa.me/?text=${message}`, '_blank');
         });
 
-         // Theme Toggle (Simplified hook)
+        // Theme Toggle
         document.getElementById('btn-theme-toggle').addEventListener('click', () => {
             document.documentElement.classList.toggle('dark');
         });
     </script>
+
 </body>
 </html>
