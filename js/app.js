@@ -1,48 +1,72 @@
 // js/app.js
-import { initDB } from './database.js';
-import { initTheme, initNavigation } from './ui-layout.js';
-import { initDateControls, renderDailyList } from './ui-daily.js';
-import { initDirectory, renderDirectoryList } from './ui-directory.js';
-import { initToolsAndSummary } from './export.js';
-import {
+import { 
+    verifyLicenseStatus, 
+    requestActivation, 
+    listenForActivationApproval,
     getOrCreateDeviceId,
-    verifyLicenseStatus,
-    requestActivation,
-    listenForActivationApproval
+    studentLogin,
+    getStudentSession
 } from './auth.js';
 
 let realtimeSubscription = null;
 
+// ==========================================
+// 1. MASTER BOOT SEQUENCE
+// ==========================================
 async function bootApp() {
-    initTheme();
     const splash = document.getElementById('splash-screen');
-    const gate = document.getElementById('activation-gate');
+    const authContainer = document.getElementById('auth-container');
+    const bootStatus = document.getElementById('boot-status');
 
-    const localLicensed = localStorage.getItem('mm_license_valid') === 'true';
-    const status = await verifyLicenseStatus();
+    // Only run this routing logic on the index.html page
+    if (!authContainer) return; 
 
-    setTimeout(() => {
-        // Allow access if active or offline with prior verification
-        if ((status === 'APPROVED' && localLicensed) || status === 'OFFLINE_APPROVED') {
-            splash.style.opacity = '0';
-            setTimeout(() => {
-                splash.style.display = 'none';
-                loadMainApp();
-            }, 400);
-        } else {
-            // Revoked, pending, or unregistered
-            if (status === 'REVOKED') localStorage.removeItem('mm_license_valid');
-            
-            gate.style.display = 'flex';
-            splash.style.opacity = '0';
-            setTimeout(() => {
-                splash.style.display = 'none';
-                initActivationGate(status);
-            }, 400);
+    try {
+        // Step 1: Check for Hardware-Locked Manager License
+        bootStatus.innerText = "Verifying Hardware Lock...";
+        const status = await verifyLicenseStatus();
+
+        if (status === 'APPROVED' || status === 'OFFLINE_APPROVED') {
+            window.location.replace('portal-manager.html');
+            return; // Stop execution, redirecting
         }
-    }, 1200);
+
+        // Step 2: Check for Frictionless Student Session
+        bootStatus.innerText = "Checking User Sessions...";
+        const studentSession = getStudentSession();
+        
+        if (studentSession) {
+            window.location.replace('portal-student.html');
+            return; // Stop execution, redirecting
+        }
+
+        // Step 3: No valid sessions found. Reveal the Login UI.
+        splash.style.opacity = '0';
+        setTimeout(() => {
+            splash.classList.add('hidden');
+            authContainer.classList.remove('hidden');
+            authContainer.classList.add('flex');
+            
+            // If the manager previously requested access, default to their pending screen
+            if (status === 'PENDING') {
+                document.getElementById('toggle-to-manager').click();
+                initActivationGate('PENDING');
+            } else {
+                initActivationGate('UNREGISTERED');
+            }
+            
+            initStudentLogin();
+        }, 500);
+
+    } catch (error) {
+        console.error("Boot Failed:", error);
+        alert("Boot failure: Please check your internet connection.");
+    }
 }
 
+// ==========================================
+// 2. MANAGER ACTIVATION LOGIC (Hardware Lock)
+// ==========================================
 function initActivationGate(currentStatus) {
     const nameInput = document.getElementById('auth-name');
     const phoneInput = document.getElementById('auth-phone');
@@ -50,18 +74,11 @@ function initActivationGate(currentStatus) {
     const statusText = document.getElementById('auth-status-text');
     const deviceId = getOrCreateDeviceId();
 
-    // Render device reference badge
+    // Display Device Reference ID
     const shortId = deviceId.substring(0, 8).toUpperCase();
-    let badge = document.getElementById('did-ref-badge');
-    if (!badge) {
-        badge = document.createElement('div');
-        badge.id = 'did-ref-badge';
-        badge.className = "text-center py-1 mb-2 font-mono text-xs text-gray-400 dark:text-gray-500";
-        badge.innerHTML = `Device Ref: <span class="text-gray-800 dark:text-gray-200 font-bold tracking-wider">${shortId}</span>`;
-        const container = document.querySelector('#activation-gate .space-y-4');
-        if (container) container.insertBefore(badge, container.firstChild);
-    }
+    document.getElementById('did-ref-container').innerHTML = `Device Ref: <span class="text-gray-800 dark:text-gray-200 font-bold tracking-wider">${shortId}</span>`;
 
+    // Handle Pending State
     if (currentStatus === 'PENDING') {
         btnRequest.innerHTML = "Awaiting Admin Approval...";
         btnRequest.disabled = true;
@@ -69,12 +86,13 @@ function initActivationGate(currentStatus) {
         startRealtimeListener();
     }
 
+    // Submit Request
     btnRequest.addEventListener('click', async () => {
         const name = nameInput.value.trim();
         const phone = phoneInput.value.trim();
 
         if (!name || !phone) {
-            alert("Please enter Name and Mobile.");
+            alert("Please enter Manager Name and Mobile.");
             return;
         }
 
@@ -87,7 +105,7 @@ function initActivationGate(currentStatus) {
                 localStorage.setItem('mm_license_valid', 'true');
                 btnRequest.innerHTML = "Activation Approved!";
                 btnRequest.classList.replace('bg-gray-900', 'bg-emerald-600');
-                setTimeout(() => window.location.reload(), 800);
+                setTimeout(() => window.location.replace('portal-manager.html'), 800);
                 return;
             }
 
@@ -109,32 +127,46 @@ function startRealtimeListener() {
     realtimeSubscription = listenForActivationApproval(() => {
         btnRequest.innerHTML = "Activation Successful!";
         btnRequest.classList.replace('bg-gray-900', 'bg-emerald-600');
-        setTimeout(() => window.location.reload(), 1000);
+        setTimeout(() => window.location.replace('portal-manager.html'), 1000);
     });
 }
 
-async function loadMainApp() {
-    try {
-        await initDB();
-        initDateControls();
-        initDirectory();
-        initToolsAndSummary();
-        renderDirectoryList();
+// ==========================================
+// 3. STUDENT LOGIN LOGIC (Frictionless Auth)
+// ==========================================
+function initStudentLogin() {
+    const btnLogin = document.getElementById('btn-student-login');
+    const codeInput = document.getElementById('student-mess-code');
+    const phoneInput = document.getElementById('student-phone');
+    const pinInput = document.getElementById('student-pin');
 
-        initNavigation((targetTabId) => {
-            if (targetTabId === 'view-summary') {
-                const monthInput = document.getElementById('input-summary-month');
-                if (monthInput) monthInput.dispatchEvent(new Event('change'));
+    btnLogin.addEventListener('click', async () => {
+        const messCode = codeInput.value.trim();
+        const phone = phoneInput.value.trim();
+        const pin = pinInput.value.trim();
+
+        if (!messCode || !phone || !pin) {
+            alert("Please fill in all fields.");
+            return;
+        }
+
+        btnLogin.innerHTML = `<span class="animate-pulse">Logging in...</span>`;
+        btnLogin.disabled = true;
+
+        try {
+            const res = await studentLogin(messCode, phone, pin);
+            if (res.success) {
+                btnLogin.innerHTML = "Login Successful!";
+                btnLogin.classList.replace('bg-blue-600', 'bg-emerald-600');
+                setTimeout(() => window.location.replace('portal-student.html'), 800);
             }
-            if (targetTabId === 'view-directory') renderDirectoryList();
-            if (targetTabId === 'view-attendance') {
-                const dateInput = document.getElementById('input-date');
-                if (dateInput) renderDailyList(dateInput.value);
-            }
-        });
-    } catch (error) {
-        console.error("Boot Failed:", error);
-    }
+        } catch (err) {
+            alert("Login Failed: " + err.message);
+            btnLogin.innerHTML = "Login securely";
+            btnLogin.disabled = false;
+        }
+    });
 }
 
+// Boot the App Engine when DOM is ready
 window.addEventListener('DOMContentLoaded', bootApp);

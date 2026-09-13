@@ -1,211 +1,148 @@
 // js/database.js
-
-const DB_NAME = 'MessManagerDB';
-const DB_VERSION = 1;
-let db;
+import { supabase } from './auth.js';
 
 // ==========================================
 // 1. INITIALIZATION
 // ==========================================
-export function initDB() {
-    return new Promise((resolve, reject) => {
-        const request = indexedDB.open(DB_NAME, DB_VERSION);
+export async function initDB() {
+    // We bypass IndexedDB creation entirely.
+    // Resolving here allows the app.js boot sequence to continue smoothly.
+    return Promise.resolve();
+}
 
-        request.onupgradeneeded = (event) => {
-            const database = event.target.result;
-            
-            // Directory Table
-            if (!database.objectStoreNames.contains('Directory')) {
-                database.createObjectStore('Directory', { keyPath: 'id', autoIncrement: true });
-            }
-            
-            // Meals Table
-            if (!database.objectStoreNames.contains('Meals')) {
-                const mealsStore = database.createObjectStore('Meals', { keyPath: 'id' });
-                mealsStore.createIndex('date', 'date', { unique: false });
-                mealsStore.createIndex('memberId', 'memberId', { unique: false });
-            }
-        };
-
-        request.onsuccess = (event) => {
-            db = event.target.result;
-            resolve(db);
-        };
-
-        request.onerror = (event) => reject(event.target.error);
-    });
+function getMessId() {
+    const messId = localStorage.getItem('mm_manager_mess_id');
+    if (!messId) throw new Error("No active mess found for this manager.");
+    return messId;
 }
 
 // ==========================================
-// 2. DIRECTORY API
+// 2. DIRECTORY API (Cloud Connected)
 // ==========================================
-export function addMember(name, room, phone) {
-    return new Promise((resolve, reject) => {
-        const tx = db.transaction(['Directory'], 'readwrite');
-        tx.objectStore('Directory').add({ name, room, phone, status: 'ACTIVE' });
-        
-        tx.oncomplete = () => resolve();
-        tx.onerror = (e) => reject(e.target.error);
-    });
+export async function addMember(name, room, phone) {
+    const { error } = await supabase.from('profiles').insert([{
+        mess_id: getMessId(),
+        role: 'STUDENT',
+        name: name.trim(),
+        room: room.trim() || null,
+        phone: phone.trim(),
+        status: 'ACTIVE',
+        pin_hash: '1234' // Default onboarding PIN. We can add UI to customize this later.
+    }]);
+    
+    if (error) throw new Error(error.message);
 }
 
-export function getAllMembers() {
-    return new Promise((resolve, reject) => {
-        const tx = db.transaction(['Directory'], 'readonly');
-        const req = tx.objectStore('Directory').getAll();
+export async function getAllMembers() {
+    const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('mess_id', getMessId())
+        .eq('role', 'STUDENT')
+        .order('name', { ascending: true });
         
-        req.onsuccess = () => resolve(req.result);
-        req.onerror = (e) => reject(e.target.error);
-    });
+    if (error || !data) return [];
+    
+    // Map cloud data to match your exact old IndexedDB JSON structure
+    return data.map(m => ({
+        id: m.id, 
+        name: m.name, 
+        room: m.room, 
+        phone: m.phone, 
+        status: m.status
+    }));
 }
 
-export function getActiveMembers() {
-    return new Promise((resolve, reject) => {
-        const tx = db.transaction(['Directory'], 'readonly');
-        const req = tx.objectStore('Directory').getAll();
-        
-        req.onsuccess = () => {
-            const active = req.result.filter(m => m.status === 'ACTIVE');
-            resolve(active);
-        };
-        req.onerror = (e) => reject(e.target.error);
-    });
+export async function getActiveMembers() {
+    const all = await getAllMembers();
+    return all.filter(m => m.status === 'ACTIVE');
 }
 
-export function updateMemberStatus(memberId, newStatus) {
-    return new Promise((resolve, reject) => {
-        const tx = db.transaction(['Directory'], 'readwrite');
-        const store = tx.objectStore('Directory');
+export async function updateMemberStatus(memberId, newStatus) {
+    const { error } = await supabase
+        .from('profiles')
+        .update({ status: newStatus })
+        .eq('id', memberId);
         
-        const getRequest = store.get(memberId);
-        getRequest.onsuccess = () => {
-            const member = getRequest.result;
-            if (member) {
-                member.status = newStatus;
-                store.put(member);
-            }
-        };
-        
-        tx.oncomplete = () => resolve();
-        tx.onerror = (e) => reject(e.target.error);
-    });
+    if (error) throw new Error(error.message);
 }
 
-// 🚀 CASCADING HARD DELETE FIX
-export function deleteMember(memberId) {
-    return new Promise((resolve, reject) => {
-        // Open transaction on BOTH tables to keep data perfectly synced
-        const tx = db.transaction(['Directory', 'Meals'], 'readwrite');
-        
-        // 1. Delete the member from the directory
-        tx.objectStore('Directory').delete(Number(memberId));
-        
-        // 2. Sweep the Meals table and permanently scrub their history
-        const mealsStore = tx.objectStore('Meals');
-        const index = mealsStore.index('memberId');
-        const req = index.openCursor(IDBKeyRange.only(Number(memberId)));
-        
-        req.onsuccess = (event) => {
-            const cursor = event.target.result;
-            if (cursor) {
-                cursor.delete(); // Hard delete the orphaned meal record
-                cursor.continue(); // Move to the next record
-            }
-        };
-        
-        tx.oncomplete = () => resolve();
-        tx.onerror = (e) => reject(e.target.error);
-    });
+export async function deleteMember(memberId) {
+    // Cascading hard delete: Clears their meals from the cloud first, then the profile
+    await supabase.from('meal_logs').delete().eq('member_id', memberId);
+    await supabase.from('profiles').delete().eq('id', memberId);
 }
 
 // ==========================================
-// 3. MEALS API
+// 3. MEALS API (Cloud Connected)
 // ==========================================
-export function getDayRecords(dateString) {
-    return new Promise((resolve, reject) => {
-        const tx = db.transaction(['Meals'], 'readonly');
-        const index = tx.objectStore('Meals').index('date');
-        const req = index.getAll(IDBKeyRange.only(dateString));
+export async function getDayRecords(dateString) {
+    const { data, error } = await supabase
+        .from('meal_logs')
+        .select('*')
+        .eq('mess_id', getMessId())
+        .eq('log_date', dateString);
         
-        req.onsuccess = () => resolve(req.result);
-        req.onerror = (e) => reject(e.target.error);
-    });
+    if (error || !data) return [];
+    
+    return data.map(r => ({
+        id: r.id,
+        date: r.log_date,
+        memberId: r.member_id,
+        day: r.day_meal,
+        night: r.night_meal
+    }));
 }
 
-export function saveMealRecord(date, memberId, timeOfDay, mealValue) {
-    return new Promise((resolve, reject) => {
-        const recordId = `${date}_${memberId}`;
-        const tx = db.transaction(['Meals'], 'readwrite');
-        const store = tx.objectStore('Meals');
-        const getReq = store.get(recordId);
-
-        getReq.onsuccess = () => {
-            let record = getReq.result;
-            if (!record) {
-                record = { id: recordId, date: date, memberId: parseInt(memberId), day: 'OFF', night: 'OFF' };
-            }
-            
-            if (timeOfDay === 'day') record.day = mealValue;
-            if (timeOfDay === 'night') record.night = mealValue;
-            
-            store.put(record);
-        };
-
-        tx.oncomplete = () => resolve();
-        tx.onerror = (e) => reject(e.target.error);
-    });
+export async function saveMealRecord(date, memberId, timeOfDay, mealValue) {
+    // Construct the unique ID exactly as the old local database did
+    const recordId = `${date}_${memberId}`; 
+    
+    // Fetch existing record for today
+    const { data: existing } = await supabase
+        .from('meal_logs')
+        .select('*')
+        .eq('id', recordId)
+        .maybeSingle();
+        
+    let payload = existing ? { ...existing } : { 
+        id: recordId, 
+        mess_id: getMessId(), 
+        member_id: memberId, 
+        log_date: date, 
+        day_meal: 'OFF', 
+        night_meal: 'OFF' 
+    };
+    
+    if (timeOfDay === 'day') payload.day_meal = mealValue;
+    if (timeOfDay === 'night') payload.night_meal = mealValue;
+    
+    const { error } = await supabase.from('meal_logs').upsert([payload]);
+    if (error) throw new Error(error.message);
 }
 
 // ==========================================
-// 4. ADMIN TOOLS & EXPORT/RESTORE LOGIC
+// 4. ADMIN EXPORT TOOLS (Legacy Support)
 // ==========================================
-export function factoryResetDB() {
-    return clearDatabase(); // Routes to the unified clear function
-}
-
 export async function getMonthRecords(monthPrefix) {
-    return new Promise((resolve, reject) => {
-        const tx = db.transaction(['Meals'], 'readonly');
-        const req = tx.objectStore('Meals').getAll();
-        req.onsuccess = () => {
-            const all = req.result || [];
-            resolve(all.filter(r => r.date.startsWith(monthPrefix)));
-        };
-        req.onerror = () => reject(req.error);
-    });
+    const { data } = await supabase
+        .from('meal_logs')
+        .select('*')
+        .eq('mess_id', getMessId())
+        .like('log_date', `${monthPrefix}%`);
+        
+    if (!data) return [];
+    return data.map(r => ({
+        id: r.id,
+        date: r.log_date,
+        memberId: r.member_id,
+        day: r.day_meal,
+        night: r.night_meal
+    }));
 }
 
-export async function getExportData() {
-    const members = await getAllMembers();
-    const records = await new Promise((resolve) => {
-        const tx = db.transaction(['Meals'], 'readonly');
-        const req = tx.objectStore('Meals').getAll();
-        req.onsuccess = () => resolve(req.result || []);
-    });
-    return { members, records };
-}
-
-export async function restoreExportData(data) {
-    return new Promise((resolve, reject) => {
-        const tx = db.transaction(['Directory', 'Meals'], 'readwrite');
-        tx.objectStore('Directory').clear();
-        tx.objectStore('Meals').clear();
-        
-        if (data.members) data.members.forEach(m => tx.objectStore('Directory').put(m));
-        if (data.records) data.records.forEach(r => tx.objectStore('Meals').put(r));
-        
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => reject(tx.error);
-    });
-}
-
-export async function clearDatabase() {
-    return new Promise((resolve, reject) => {
-        const tx = db.transaction(['Directory', 'Meals'], 'readwrite');
-        tx.objectStore('Directory').clear();
-        tx.objectStore('Meals').clear();
-        
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => reject(tx.error);
-    });
-}
+// These are temporarily stubbed to prevent UI crashes if you click old export buttons.
+export async function getExportData() { return { members: [], records: [] }; }
+export async function restoreExportData(data) { return Promise.resolve(); }
+export async function clearDatabase() { return Promise.resolve(); }
+export async function factoryResetDB() { return Promise.resolve(); }

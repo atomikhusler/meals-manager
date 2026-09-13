@@ -1,10 +1,16 @@
 // js/auth.js
 
+// ==========================================
 // 💡 Paste your Supabase Project URL and Public Anon Key here
-const SUPABASE_URL = "https://usazhtrcafnsylffrhhv.supabase.co";
-const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVzYXpodHJjYWZuc3lsZmZyaGh2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgzNzUyMTYsImV4cCI6MjEwMzk1MTIxNn0.KPAfz21-QfmaK5VOSqVXpkUBT7LujNQjsW85HTsqRhI";
+const SUPABASE_URL = "YOUR_URL";
+const SUPABASE_ANON_KEY = "YOUR_KEY";
+// ==========================================
         
 export const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+// ============================================================================
+// 1. MANAGER HARDWARE AUTHENTICATION (God Mode Security)
+// ============================================================================
 
 // Permanent, cryptographically secure Device Identifier
 export function getOrCreateDeviceId() {
@@ -33,7 +39,7 @@ export async function requestActivation(name, phone) {
         return { success: true, status: existing.status, deviceId };
     }
 
-    // Insert new request (RLS ensures status can only be 'PENDING')
+    // Insert new request
     const { error: insertErr } = await supabase
         .from('activations')
         .insert([{
@@ -87,4 +93,59 @@ export function listenForActivationApproval(onApproved) {
             }
         )
         .subscribe();
+}
+
+// ============================================================================
+// 2. STUDENT FRICTIONLESS AUTHENTICATION (Phone + PIN)
+// ============================================================================
+
+export async function studentLogin(messCode, phone, pin) {
+    try {
+        // 1. Verify the Mess Code exists
+        const { data: mess, error: messErr } = await supabase
+            .from('messes')
+            .select('id')
+            .eq('mess_code', messCode.toUpperCase())
+            .maybeSingle();
+
+        if (messErr || !mess) throw new Error("Invalid Mess Code.");
+
+        // 2. Authenticate the Student within that specific Mess
+        const { data: student, error: studentErr } = await supabase
+            .from('profiles')
+            .select('user_id, name, role, status')
+            .eq('mess_id', mess.id)
+            .eq('phone', phone.trim())
+            .eq('pin_hash', pin.trim())
+            .eq('role', 'STUDENT')
+            .maybeSingle();
+
+        if (studentErr || !student) throw new Error("Invalid Mobile Number or PIN.");
+        if (student.status === 'INACTIVE') throw new Error("Your account has been deactivated by the Manager.");
+
+        // 3. Save session locally so they don't have to log in again
+        const sessionData = {
+            user_id: student.user_id,
+            mess_id: mess.id,
+            name: student.name,
+            role: 'STUDENT',
+            timestamp: new Date().getTime()
+        };
+        
+        localStorage.setItem('mm_student_session', JSON.stringify(sessionData));
+        return { success: true };
+
+    } catch (error) {
+        throw error;
+    }
+}
+
+export function getStudentSession() {
+    const sessionStr = localStorage.getItem('mm_student_session');
+    if (!sessionStr) return null;
+    return JSON.parse(sessionStr);
+}
+
+export function logoutStudent() {
+    localStorage.removeItem('mm_student_session');
 }
