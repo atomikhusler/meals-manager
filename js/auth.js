@@ -2,8 +2,8 @@
 
 // ==========================================
 // 💡 Paste your Supabase Project URL and Public Anon Key here
-const SUPABASE_URL = "YOUR_URL";
-const SUPABASE_ANON_KEY = "YOUR_KEY";
+const SUPABASE_URL = "https://usazhtrcafnsylffrhhv.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVzYXpodHJjYWZuc3lsZmZyaGh2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgzNzUyMTYsImV4cCI6MjEwMzk1MTIxNn0.KPAfz21-QfmaK5VOSqVXpkUBT7LujNQjsW85HTsqRhI";
 // ==========================================
         
 export const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
